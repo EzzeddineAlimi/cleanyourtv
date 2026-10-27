@@ -56,8 +56,15 @@ final class MiddleEarthGlance {
     private final TextView weatherText;
     private final TextView newsText;
     private Future<?> pending;
-    private boolean active;
-    private boolean closed;
+    private volatile boolean active;
+    private volatile boolean closed;
+    private final Runnable refresh = new Runnable() {
+        @Override public void run() {
+            if (!active || closed) return;
+            scheduleIfStale();
+            main.postDelayed(this, NEWS_AGE_MS);
+        }
+    };
 
     static MiddleEarthGlance attach(Activity activity, FrameLayout root) {
         if (!TEST_PACKAGE.equals(activity.getPackageName())) return null;
@@ -135,6 +142,13 @@ final class MiddleEarthGlance {
     void resume() {
         if (closed) return;
         active = true;
+        scheduleIfStale();
+        main.removeCallbacks(refresh);
+        main.postDelayed(refresh, NEWS_AGE_MS);
+    }
+
+    private void scheduleIfStale() {
+        if (!active || closed) return;
         if (pending != null && !pending.isDone()) return;
         final long now = System.currentTimeMillis();
         final boolean fetchWeather = now - prefs.getLong("weather_at", 0) >= WEATHER_AGE_MS;
@@ -148,6 +162,7 @@ final class MiddleEarthGlance {
 
     void pause() {
         active = false;
+        main.removeCallbacks(refresh);
         if (pending != null) pending.cancel(true);
     }
 
